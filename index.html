@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard de Escaneo Cuantitativo y Trading</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React and ReactDOM CDN (production) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- PropTypes & ReactIs CDN (Required for Recharts UMD Build in Browser) -->
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js" crossorigin></script>
+  
+  <!-- Recharts CDN (UMD build) -->
+  <script src="https://unpkg.com/recharts/umd/Recharts.js" crossorigin></script>
+  
+  <!-- Babel Standalone CDN -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Google Fonts: Inter and JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#080a0f',        // Slate-black background
+            panelDark: '#121620',     // Bloomberg-like panel dark gray
+            panelHeader: '#181e2b',   // Darker header
+            borderDark: '#202835',    // Grid line borders
+            accentGreen: '#00c853',   // Neon buy green
+            accentRed: '#ff3d00',     // Neon sell/alert red
+            accentYellow: '#ffc400',  // Warm wait yellow
+            accentBlue: '#2979ff',    // Terminal tech blue
+            textMuted: '#848e9c',     // Greyed text
+            textPrimary: '#eaecef'    // Crisp active text
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    body {
+      background-color: #080a0f;
+      color: #eaecef;
+      font-family: 'Inter', sans-serif;
+    }
+    /* Simple CSS marquee styling */
+    .marquee-container {
+      overflow: hidden;
+      white-space: nowrap;
+      position: relative;
+      width: 100%;
+    }
+    .marquee-content {
+      display: inline-block;
+      padding-left: 100%;
+      animation: marquee 25s linear infinite;
+    }
+    @keyframes marquee {
+      0% { transform: translate3d(0, 0, 0); }
+      100% { transform: translate3d(-100%, 0, 0); }
+    }
+    
+    /* Scrollbars customization */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #080a0f;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #202835;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #2979ff;
+    }
+  </style>
+</head>
+<body class="overflow-x-hidden pb-24">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    const { 
+      LineChart, Line, XAxis, YAxis, CartesianGrid, 
+      Tooltip, ReferenceLine, ResponsiveContainer 
+    } = window.Recharts;
+
+    const NEWS_LIST = [
+      "El S&P 500 alcanza nuevos máximos históricos impulsado por el sector tecnológico y el auge de la inteligencia artificial.",
+      "La Reserva Federal de los Estados Unidos mantiene las tasas de interés estables mientras vigila de cerca la inflación.",
+      "El rendimiento del Tesoro a diez años cae tras la publicación de datos de empleo más débiles de lo esperado.",
+      "El índice Euro Stoxx 50 muestra señales de fortaleza tras la recuperación industrial y de servicios en Europa.",
+      "El petróleo Brent cotiza al alza debido a las tensiones en Oriente Medio y los recortes voluntarios de la OPEP+.",
+      "Analistas cuantitativos prevén una menor volatilidad implícita en los mercados globales para el próximo trimestre.",
+      "NVIDIA supera la capitalización de mercado de Apple e impulsa un fuerte rally en el sector de semiconductores.",
+      "El Banco Central Europeo sugiere posibles recortes de tasas adicionales si continúa la desaceleración de la inflación.",
+      "Las acciones de pequeña capitalización experimentan flujos récord de entrada en busca de oportunidades de valor.",
+      "La correlación entre el oro y los rendimientos reales de los bonos soberanos se debilita en medio de la incertidumbre global."
+    ];
+
+    const MARKETS = [
+      { id: "sp500", name: "S&P 500" },
+      { id: "nasdaq100", name: "NASDAQ 100" },
+      { id: "dowjones", name: "Dow Jones" },
+      { id: "eurostoxx50", name: "Euro Stoxx 50" }
+    ];
+
+    const FALLBACK_TICKERS = {
+      sp500: [
+        "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "GOOG", "META", "BRK-B", "LLY", "TSLA",
+        "V", "UNH", "JNJ", "XOM", "JPM", "MA", "PG", "AVGO", "HD", "CVX",
+        "MRK", "COST", "ABBV", "MDLZ", "ADBE", "PEP", "KO", "TMO", "WFC", "BAC",
+        "MCD", "CSCO", "CRM", "ABT", "QCOM", "GE", "INTU", "AMD", "DIS", "TXN",
+        "AMGN", "PM", "HON", "NEE", "ISRG", "COP", "LOW", "AXP", "SBUX", "NFLX"
+      ],
+      nasdaq100: [
+        "AAPL", "MSFT", "AMZN", "NVDA", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "PEP",
+        "COST", "CSCO", "ADBE", "AMD", "CMG", "NFLX", "QCOM", "INTU", "AMGN", "ISRG",
+        "TXN", "HON", "AMAT", "BKNG", "VRTX", "SBUX", "ADP", "MDLZ", "GILD", "REGN",
+        "LRCX", "MU", "PANW", "SNPS", "CDNS", "ASML", "KLAC", "CSX", "ORLY", "MAR",
+        "MELI", "NXPI", "CTAS", "LULU", "MNST", "PCAR", "WDAY", "KDP", "CRWD", "EXC"
+      ],
+      dowjones: [
+        "MMM", "AXP", "AMZN", "AAPL", "BA", "CAT", "CVX", "CSCO", "KO", "DIS",
+        "DD", "XOM", "GE", "GS", "HD", "HON", "IBM", "INTU", "JNJ", "JPM",
+        "MCD", "MRK", "MSFT", "NKE", "PG", "CRM", "TRV", "UNH", "V", "VZ", "WMT"
+      ],
+      eurostoxx50: [
+        "ASML.AS", "MC.PA", "SAP.DE", "LVMH.PA", "SAN.PA", "SIE.DE", "ALV.DE", "OR.PA", "SU.PA", "IBE.MC",
+        "ITX.MC", "AI.PA", "AIR.PA", "TTE.PA", "DTE.DE", "SAN.MC", "BMW.DE", "BAS.DE", "BAYN.DE", "ENEL.MI",
+        "ENI.MI", "ISP.MI", "STLA.MI", "NOKIA.HE", "BBVA.MC", "CRH", "FLTR", "SAF.PA", "MBG.DE", "MUV2.DE",
+        "RWE.DE", "DG.PA", "BNP.PA", "GLE.PA", "SGO.PA", "RACE.MI", "HEIA.AS", "IFX.DE", "PRX.AS", "ADS.DE",
+        "DHL.DE", "AH.AS", "ENGI.PA", "VIV.PA", "DB1.DE", "AD.AS", "URW.PA", "WKL.AS", "DSY.PA", "VOW3.DE"
+      ]
+    };
+
+    // Helper to evaluate 5 fundamental rules
+    const evaluateFundamentals = (summary) => {
+      const financialData = summary?.financialData || {};
+      const keyStats = summary?.defaultKeyStatistics || {};
+      const detail = summary?.summaryDetail || {};
+
+      const revenueGrowth = financialData.revenueGrowth?.raw;
+      const peRatio = detail.trailingPE?.raw || keyStats.trailingPE?.raw;
+      const pegRatio = keyStats.pegRatio?.raw;
+      const roe = financialData.returnOnEquity?.raw;
+      const quickRatio = financialData.quickRatio?.raw;
+
+      const checks = [
+        {
+          id: 1,
+          name: "Crecimiento de Ingresos > 10% (0.10)",
+          metric: "Rev. Growth",
+          value: revenueGrowth,
+          display: revenueGrowth !== undefined && revenueGrowth !== null ? `${(revenueGrowth * 100).toFixed(2)}%` : "N/D",
+          pass: revenueGrowth !== undefined && revenueGrowth !== null && revenueGrowth > 0.10
+        },
+        {
+          id: 2,
+          name: "Ratio P/E < 30",
+          metric: "P/E Ratio",
+          value: peRatio,
+          display: peRatio !== undefined && peRatio !== null ? peRatio.toFixed(2) : "N/D",
+          pass: peRatio !== undefined && peRatio !== null && peRatio > 0 && peRatio < 30
+        },
+        {
+          id: 3,
+          name: "Ratio PEG < 2",
+          metric: "PEG Ratio",
+          value: pegRatio,
+          display: pegRatio !== undefined && pegRatio !== null ? pegRatio.toFixed(2) : "N/D",
+          pass: pegRatio !== undefined && pegRatio !== null && pegRatio > 0 && pegRatio < 2
+        },
+        {
+          id: 4,
+          name: "Retorno sobre Capital (ROE) > 5% (0.05)",
+          metric: "ROE",
+          value: roe,
+          display: roe !== undefined && roe !== null ? `${(roe * 100).toFixed(2)}%` : "N/D",
+          pass: roe !== undefined && roe !== null && roe > 0.05
+        },
+        {
+          id: 5,
+          name: "Ratio de Liquidez Rápida (Quick Ratio) > 1.2",
+          metric: "Quick Ratio",
+          value: quickRatio,
+          display: quickRatio !== undefined && quickRatio !== null ? quickRatio.toFixed(2) : "N/D",
+          pass: quickRatio !== undefined && quickRatio !== null && quickRatio > 1.2
+        }
+      ];
+
+      const score = checks.filter(c => c.pass).length;
+      return { score, checks };
+    };
+
+    // Calculate EMA, RSI, ATR, Volume SMA, and MACD
+    const calculateQuantitative = (chartRes) => {
+      const quote = chartRes.indicators?.quote?.[0] || {};
+      const closes = quote.close || [];
+      const highs = quote.high || [];
+      const lows = quote.low || [];
+      const opens = quote.open || [];
+      const volumes = quote.volume || [];
+      const timestamps = chartRes.timestamp || [];
+
+      // Filter nulls
+      const dailyData = [];
+      for (let i = 0; i < closes.length; i++) {
+        if (
+          closes[i] !== null && closes[i] !== undefined &&
+          highs[i] !== null && highs[i] !== undefined &&
+          lows[i] !== null && lows[i] !== undefined &&
+          opens[i] !== null && opens[i] !== undefined &&
+          volumes[i] !== null && volumes[i] !== undefined
+        ) {
+          dailyData.push({
+            close: closes[i],
+            high: highs[i],
+            low: lows[i],
+            open: opens[i],
+            volume: volumes[i],
+            timestamp: timestamps[i]
+          });
+        }
+      }
+
+      if (dailyData.length < 50) {
+        throw new Error(`Datos históricos insuficientes (se requieren al menos 50 periodos, obtenidos ${dailyData.length})`);
+      }
+
+      // Helper to compute EMA as an array
+      const calculateEMAArray = (prices, period) => {
+        if (prices.length < period) return Array(prices.length).fill(null);
+        const emaArr = Array(prices.length).fill(null);
+        const k = 2 / (period + 1);
+        
+        let sum = 0;
+        for (let i = 0; i < period; i++) {
+          sum += prices[i];
+        }
+        let currentEma = sum / period;
+        emaArr[period - 1] = currentEma;
+        
+        for (let i = period; i < prices.length; i++) {
+          currentEma = prices[i] * k + currentEma * (1 - k);
+          emaArr[i] = currentEma;
+        }
+        return emaArr;
+      };
+
+      // 1. Calculate EMA 50
+      const emaPeriod = 50;
+      const k = 2 / (emaPeriod + 1);
+      let ema = dailyData.slice(0, emaPeriod).reduce((sum, d) => sum + d.close, 0) / emaPeriod;
+      for (let i = emaPeriod; i < dailyData.length; i++) {
+        ema = dailyData[i].close * k + ema * (1 - k);
+      }
+
+      // 2. Calculate RSI 14
+      const rsiPeriod = 14;
+      let gains = [];
+      let losses = [];
+      for (let i = 1; i < dailyData.length; i++) {
+        const diff = dailyData[i].close - dailyData[i - 1].close;
+        gains.push(diff > 0 ? diff : 0);
+        losses.push(diff < 0 ? -diff : 0);
+      }
+      let avgGain = gains.slice(0, rsiPeriod).reduce((sum, g) => sum + g, 0) / rsiPeriod;
+      let avgLoss = losses.slice(0, rsiPeriod).reduce((sum, l) => sum + l, 0) / rsiPeriod;
+      for (let i = rsiPeriod; i < gains.length; i++) {
+        avgGain = (avgGain * (rsiPeriod - 1) + gains[i]) / rsiPeriod;
+        avgLoss = (avgLoss * (rsiPeriod - 1) + losses[i]) / rsiPeriod;
+      }
+      let rsi = 100;
+      if (avgLoss !== 0) {
+        const rs = avgGain / avgLoss;
+        rsi = 100 - (100 / (1 + rs));
+      }
+
+      // 3. Calculate ATR 14
+      const atrPeriod = 14;
+      const trs = [];
+      for (let i = 1; i < dailyData.length; i++) {
+        const h = dailyData[i].high;
+        const l = dailyData[i].low;
+        const pc = dailyData[i - 1].close;
+        const tr = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+        trs.push(tr);
+      }
+      let atr = trs.slice(0, atrPeriod).reduce((sum, tr) => sum + tr, 0) / atrPeriod;
+      for (let i = atrPeriod; i < trs.length; i++) {
+        atr = (atr * (atrPeriod - 1) + trs[i]) / atrPeriod;
+      }
+
+      // 4. Calculate Volume SMA 20
+      const volPeriod = 20;
+      let volSma = 0;
+      if (dailyData.length >= volPeriod) {
+        const last20 = dailyData.slice(-volPeriod);
+        const volSum = last20.reduce((sum, d) => sum + d.volume, 0);
+        volSma = volSum / volPeriod;
+      }
+      const latestVolume = dailyData[dailyData.length - 1].volume;
+
+      // 5. Calculate MACD (12, 26, 9)
+      const closeList = dailyData.map(d => d.close);
+      const ema12 = calculateEMAArray(closeList, 12);
+      const ema26 = calculateEMAArray(closeList, 26);
+      
+      const macdLine = [];
+      for (let i = 0; i < dailyData.length; i++) {
+        if (ema12[i] !== null && ema26[i] !== null) {
+          macdLine.push(ema12[i] - ema26[i]);
+        } else {
+          macdLine.push(null);
+        }
+      }
+      const validMacd = macdLine.filter(v => v !== null);
+      const validSignal = calculateEMAArray(validMacd, 9);
+      const signalLine = [];
+      let signalIdx = 0;
+      for (let i = 0; i < dailyData.length; i++) {
+        if (macdLine[i] !== null) {
+          signalLine.push(validSignal[signalIdx]);
+          signalIdx++;
+        } else {
+          signalLine.push(null);
+        }
+      }
+      const latestMacd = macdLine[macdLine.length - 1];
+      const latestSignal = signalLine[signalLine.length - 1];
+
+      const latest = dailyData[dailyData.length - 1];
+      const latestPrice = latest.close;
+
+      // Signals conditions
+      const cond1 = latestPrice > ema; // Trend
+      const cond2 = rsi >= 40 && rsi <= 60; // Momentum
+      const cond3 = latestVolume > volSma; // Institutional Volume
+      const cond4 = latestMacd !== null && latestSignal !== null && latestMacd > latestSignal; // Crossover
+
+      let signal = "NEUTRAL";
+      if (cond1 && cond2 && cond3 && cond4) {
+        signal = "COMPRA";
+      } else if (!cond1 || rsi > 70 || !cond2 || !cond3 || !cond4) {
+        signal = "ESPERAR";
+      }
+
+      // Risk management levels (Entry, SL, TP)
+      const entry = latestPrice;
+      const sl = latestPrice - (2 * atr);
+      const tp = latestPrice + (4 * atr); // 1:2 ratio based on SL distance
+      
+      const slPercent = ((entry - sl) / entry) * 100;
+      const tpPercent = ((tp - entry) / entry) * 100;
+
+      const technicalChecks = [
+        {
+          id: 1,
+          name: "Tendencia: Precio > EMA 50",
+          desc: `Precio Actual: $${latestPrice.toFixed(2)} vs EMA 50: $${ema.toFixed(2)}`,
+          pass: cond1
+        },
+        {
+          id: 2,
+          name: "Impulso: RSI (14) en rango [40, 60]",
+          desc: `RSI Actual: ${rsi.toFixed(2)} vs Rango [40, 60]`,
+          pass: cond2
+        },
+        {
+          id: 3,
+          name: "Institucional: Volumen > SMA 20 de Vol",
+          desc: `Vol: ${(latestVolume/1e6).toFixed(2)}M vs Media: ${(volSma/1e6).toFixed(2)}M`,
+          pass: cond3
+        },
+        {
+          id: 4,
+          name: "Timing: Línea MACD > Señal (Cruce alcista)",
+          desc: `MACD Line: ${latestMacd !== null ? latestMacd.toFixed(4) : "N/D"} vs Signal Line: ${latestSignal !== null ? latestSignal.toFixed(4) : "N/D"}`,
+          pass: cond4
+        }
+      ];
+
+      // Map last 30 periods for charting
+      const chartData = dailyData.slice(-30).map(d => ({
+        date: new Date(d.timestamp * 1000).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }),
+        close: Number(d.close.toFixed(2)),
+        high: Number(d.high.toFixed(2)),
+        low: Number(d.low.toFixed(2)),
+        open: Number(d.open.toFixed(2)),
+        timestamp: d.timestamp
+      }));
+
+      return {
+        latestPrice,
+        ema,
+        rsi,
+        atr,
+        signal,
+        risk: { entry, sl, tp, slPercent, tpPercent },
+        technicalChecks,
+        chartData
+      };
+    };
+
+    function App() {
+      const [selectedMarket, setSelectedMarket] = useState("");
+      const [isScanning, setIsScanning] = useState(false);
+      const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, status: "", approved: 0 });
+      const [stocks, setStocks] = useState([]);
+      const [selectedStock, setSelectedStock] = useState(null);
+      const [newsIndex, setNewsIndex] = useState(0);
+      const [isNewsPlaying, setIsNewsPlaying] = useState(false);
+      const [tickerLogs, setTickerLogs] = useState([]);
+      
+      const logsEndRef = useRef(null);
+
+      // Scroll logs terminal to bottom on new logs
+      useEffect(() => {
+        if (logsEndRef.current) {
+          logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, [tickerLogs]);
+
+      // Audio News Player Effect using speech synthesis
+      useEffect(() => {
+        if (isNewsPlaying) {
+          const speak = () => {
+            window.speechSynthesis.cancel();
+            const text = NEWS_LIST[newsIndex];
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'es-ES';
+            
+            // Try to find a Spanish voice
+            const voices = window.speechSynthesis.getVoices();
+            const esVoice = voices.find(v => v.lang.startsWith('es-ES') || v.lang.startsWith('es-MX') || v.lang.startsWith('es'));
+            if (esVoice) utterance.voice = esVoice;
+            
+            utterance.onend = () => {
+              // Automatically advance to next news when finished
+              setNewsIndex((prev) => (prev + 1) % NEWS_LIST.length);
+            };
+            
+            utterance.onerror = (e) => {
+              console.error("Speech Synthesis Error:", e);
+              // Fallback: auto-advance after 5s if speech is blocked
+              const timer = setTimeout(() => {
+                setNewsIndex((prev) => (prev + 1) % NEWS_LIST.length);
+              }, 5000);
+              return () => clearTimeout(timer);
+            };
+            
+            window.speechSynthesis.speak(utterance);
+          };
+
+          speak();
+        } else {
+          window.speechSynthesis.cancel();
+        }
+
+        return () => {
+          window.speechSynthesis.cancel();
+        };
+      }, [isNewsPlaying, newsIndex]);
+
+      // Handle voice loading issues on Chrome
+      useEffect(() => {
+        const handleVoices = () => {
+          window.speechSynthesis.getVoices();
+        };
+        window.speechSynthesis.addEventListener('voiceschanged', handleVoices);
+        return () => window.speechSynthesis.removeEventListener('voiceschanged', handleVoices);
+      }, []);
+
+      const scanMarket = async (marketId) => {
+        setSelectedMarket(marketId);
+        setIsScanning(true);
+        setStocks([]);
+        setSelectedStock(null);
+        setTickerLogs([]);
+        
+        setScanProgress({
+          current: 0,
+          total: 0,
+          status: "Solicitando lista de componentes del índice...",
+          approved: 0
+        });
+
+        try {
+          let tickers = [];
+          const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+          
+          if (isLocal) {
+            try {
+              const response = await fetch(`/api/components?market=${marketId}`);
+              if (response.ok) {
+                const data = await response.json();
+                tickers = data.tickers || [];
+              }
+            } catch (err) {
+              console.log("Fallo al obtener componentes localmente, intentando remoto:", err);
+            }
+          }
+          
+          if (!tickers || tickers.length === 0) {
+            try {
+              if (marketId === "sp500") {
+                const res = await fetch("https://yfiua.github.io/index-constituents/constituents-sp500.json");
+                if (res.ok) {
+                  const data = await res.json();
+                  tickers = data.map(item => (item.symbol || "").replace('.', '-'));
+                }
+              } else if (marketId === "nasdaq100") {
+                const res = await fetch("https://yfiua.github.io/index-constituents/constituents-nasdaq100.json");
+                if (res.ok) {
+                  const data = await res.json();
+                  tickers = data.map(item => (item.symbol || "").replace('.', '-'));
+                }
+              } else if (marketId === "dowjones") {
+                const res = await fetch("https://yfiua.github.io/index-constituents/constituents-dowjones.json");
+                if (res.ok) {
+                  const data = await res.json();
+                  tickers = data.map(item => (item.symbol || "").replace('.', '-'));
+                }
+              }
+            } catch (e) {
+              console.log("Fallo al obtener componentes dinámicamente, usando lista local de respaldo:", e);
+            }
+          }
+
+          if (!tickers || tickers.length === 0) {
+            tickers = FALLBACK_TICKERS[marketId] || [];
+          }
+
+          // Limit to max 50 tickers to avoid rate limiting
+          tickers = tickers.slice(0, 50);
+
+          setScanProgress(p => ({
+            ...p,
+            total: tickers.length,
+            status: "Componentes listos. Iniciando análisis cuantitativo..."
+          }));
+
+          let approvedCount = 0;
+          const processedStocks = [];
+          const batchSize = 4; // Batch fetches to avoid rate limits
+
+          for (let i = 0; i < tickers.length; i += batchSize) {
+            const batch = tickers.slice(i, i + batchSize);
+            
+            await Promise.all(batch.map(async (ticker) => {
+              try {
+                let stockData;
+                let fetchSource = "CORS Proxy 1";
+                let success = false;
+                
+                if (isLocal) {
+                  try {
+                    fetchSource = "API local";
+                    const stockRes = await fetch(`/api/stock?ticker=${ticker}`);
+                    if (!stockRes.ok) throw new Error("Fallo API Local");
+                    stockData = await stockRes.json();
+                    success = true;
+                  } catch (localErr) {
+                    console.log(`API Local falló para ${ticker}. Intentando proxy-1 (corsproxy.io)...`);
+                  }
+                }
+                
+                if (!success) {
+                  try {
+                    fetchSource = "CORS Proxy 1";
+                    const summaryUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`;
+                    const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=6m`;
+                    
+                    const [summaryRes, chartRes] = await Promise.all([
+                      fetch(`https://corsproxy.io/?${encodeURIComponent(summaryUrl)}`).then(r => {
+                        if (!r.ok) throw new Error("Proxy error");
+                        return r.json();
+                      }),
+                      fetch(`https://corsproxy.io/?${encodeURIComponent(chartUrl)}`).then(r => {
+                        if (!r.ok) throw new Error("Proxy error");
+                        return r.json();
+                      })
+                    ]);
+                    
+                    const quote = summaryRes?.quoteResponse?.result?.[0] || {};
+                    const chart = chartRes?.chart?.result?.[0];
+                    
+                    if (!quote || !chart) {
+                      throw new Error("Datos incompletos desde CORS Proxy 1");
+                    }
+                    
+                    const quoteSummary = {
+                      financialData: {
+                        revenueGrowth: { raw: quote.revenueGrowth },
+                        returnOnEquity: { raw: quote.returnOnEquity },
+                        quickRatio: { raw: quote.quickRatio },
+                        currentPrice: { raw: quote.currentPrice || quote.regularMarketPrice }
+                      },
+                      defaultKeyStatistics: {
+                        pegRatio: { raw: quote.pegRatio || quote.trailingPegRatio },
+                        trailingPE: { raw: quote.trailingPE }
+                      },
+                      price: {
+                        regularMarketPrice: { raw: quote.regularMarketPrice },
+                        regularMarketChangePercent: { raw: (quote.regularMarketChangePercent || 0) / 100 },
+                        longName: quote.longName,
+                        shortName: quote.shortName
+                      }
+                    };
+                    
+                    stockData = { ticker, quoteSummary, chart };
+                    success = true;
+                  } catch (p1Err) {
+                    console.log(`CORS Proxy 1 falló para ${ticker}. Intentando proxy-2 (allorigins)...`);
+                  }
+                }
+                
+                if (!success) {
+                  try {
+                    fetchSource = "CORS Proxy 2";
+                    const summaryUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`;
+                    const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=6m`;
+                    
+                    const [summaryRes, chartRes] = await Promise.all([
+                      fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(summaryUrl)}`)
+                        .then(r => {
+                          if (!r.ok) throw new Error("Proxy error");
+                          return r.json();
+                        })
+                        .then(d => JSON.parse(d.contents)),
+                      fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(chartUrl))
+                        .then(r => {
+                          if (!r.ok) throw new Error("Proxy error");
+                          return r.json();
+                        })
+                        .then(d => JSON.parse(d.contents))
+                    ]);
+                    
+                    const quote = summaryRes?.quoteResponse?.result?.[0] || {};
+                    const chart = chartRes?.chart?.result?.[0];
+                    
+                    if (!quote || !chart) {
+                      throw new Error("Datos incompletos desde CORS Proxy 2");
+                    }
+                    
+                    const quoteSummary = {
+                      financialData: {
+                        revenueGrowth: { raw: quote.revenueGrowth },
+                        returnOnEquity: { raw: quote.returnOnEquity },
+                        quickRatio: { raw: quote.quickRatio },
+                        currentPrice: { raw: quote.currentPrice || quote.regularMarketPrice }
+                      },
+                      defaultKeyStatistics: {
+                        pegRatio: { raw: quote.pegRatio || quote.trailingPegRatio },
+                        trailingPE: { raw: quote.trailingPE }
+                      },
+                      price: {
+                        regularMarketPrice: { raw: quote.regularMarketPrice },
+                        regularMarketChangePercent: { raw: (quote.regularMarketChangePercent || 0) / 100 },
+                        longName: quote.longName,
+                        shortName: quote.shortName
+                      }
+                    };
+                    
+                    stockData = { ticker, quoteSummary, chart };
+                    success = true;
+                  } catch (p2Err) {
+                    throw new Error("Todos los métodos de obtención fallaron");
+                  }
+                }
+                
+                // 1. Evaluate fundamentals
+                const fundamentals = evaluateFundamentals(stockData.quoteSummary);
+                
+                // Log progress in terminal
+                setTickerLogs(prev => [
+                  ...prev,
+                  `Ticker: ${ticker} (${fetchSource}) - Score Fundamental: ${fundamentals.score}/5 (${fundamentals.score >= 3 ? 'APROBADO' : 'DESCARTADO'})`
+                ]);
+
+                // Filter Score >= 3
+                if (fundamentals.score >= 3) {
+                  // 2. Calculate technical indicators (EMA, RSI, ATR)
+                  const technicals = calculateQuantitative(stockData.chart);
+                  
+                  // Extract pricing change
+                  const priceInfo = stockData.quoteSummary?.price || {};
+                  const regularPrice = priceInfo.regularMarketPrice?.raw || technicals.latestPrice;
+                  const changePercent = priceInfo.regularMarketChangePercent?.raw || 0;
+                  const companyName = priceInfo.shortName || priceInfo.longName || ticker;
+
+                  processedStocks.push({
+                    ticker,
+                    name: companyName,
+                    price: regularPrice,
+                    changePercent: changePercent * 100, // format as percentage
+                    fundamentals,
+                    technicals
+                  });
+                  approvedCount++;
+                }
+              } catch (err) {
+                // Silently skip failed tickers
+                setTickerLogs(prev => [...prev, `[ERROR] Excluido ticker ${ticker}: ${err.message}`]);
+              }
+            }));
+
+            // Update progress
+            const currentProcessed = Math.min(i + batchSize, tickers.length);
+            setScanProgress(p => ({
+              ...p,
+              current: currentProcessed,
+              approved: approvedCount,
+              status: `Analizando componentes: ${currentProcessed} de ${tickers.length}`
+            }));
+
+            // Force a UI update and add spacing
+            setStocks([...processedStocks]);
+            await new Promise(r => setTimeout(r, 200)); // Sleep 200ms
+          }
+
+          setIsScanning(false);
+          setScanProgress(p => ({
+            ...p,
+            status: `Escaneo finalizado. Analizados: ${tickers.length} | Aprobados: ${approvedCount}`
+          }));
+
+        } catch (err) {
+          setIsScanning(false);
+          setScanProgress(p => ({
+            ...p,
+            status: `Error en el escaneo: ${err.message}`
+          }));
+        }
+      };
+
+      const handleNewsPlay = () => {
+        setIsNewsPlaying(!isNewsPlaying);
+      };
+
+      const handleNewsNext = () => {
+        setNewsIndex((prev) => (prev + 1) % NEWS_LIST.length);
+      };
+
+      return (
+        <div className="min-h-screen bg-bgDark flex flex-col">
+          {/* Top Navbar */}
+          <nav className="border-b border-borderDark bg-panelDark px-6 py-4 flex items-center justify-between shadow-lg sticky top-0 z-50">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded bg-accentBlue flex items-center justify-center font-bold text-bgDark text-lg animate-pulse">
+                Q
+              </div>
+              <span className="font-bold text-lg tracking-wider text-textPrimary uppercase font-mono">
+                Antigravity <span className="text-accentBlue text-sm">QuantEngine</span>
+              </span>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <label className="text-xs text-textMuted font-mono uppercase tracking-wider hidden sm:inline-block">
+                Selección de Mercado:
+              </label>
+              <select 
+                className="bg-bgDark border border-borderDark text-textPrimary text-sm rounded px-3 py-1.5 focus:outline-none focus:border-accentBlue font-mono cursor-pointer transition-colors duration-200"
+                value={selectedMarket}
+                onChange={(e) => {
+                  if (e.target.value) scanMarket(e.target.value);
+                }}
+                disabled={isScanning}
+              >
+                <option value="" disabled>Selecciona un mercado...</option>
+                {MARKETS.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+          </nav>
+
+          {/* Main Grid Content */}
+          <main className="flex-grow p-6 flex flex-col space-y-6">
+            {/* INITIAL STATE MESSAGE */}
+            {!selectedMarket && (
+              <div className="flex-grow flex items-center justify-center min-h-[450px]">
+                <div className="text-center max-w-xl p-8 border border-dashed border-borderDark bg-panelDark rounded-lg shadow-xl animate-fade-in">
+                  <svg className="mx-auto h-16 w-16 text-textMuted mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  <h2 className="text-xl font-bold text-textPrimary mb-2">Escaneo Cuantitativo</h2>
+                  <p className="text-textMuted text-sm leading-relaxed">
+                    Selecciona un mercado en el menú superior para comenzar el escaneo cuantitativo
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* SCANNING PROGRESS & LOG TERMINAL */}
+            {selectedMarket && (
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                
+                {/* Terminal logging & progress */}
+                <div className="lg:col-span-4 border border-borderDark bg-panelDark rounded-md overflow-hidden flex flex-col shadow-md">
+                  <div className="bg-panelHeader px-4 py-2 border-b border-borderDark flex items-center justify-between font-mono text-xs text-textMuted">
+                    <span>TERMINAL DE ESCANEO CUANTITATIVO</span>
+                    <span className="flex items-center space-x-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${isScanning ? 'bg-accentYellow animate-ping' : 'bg-accentGreen'}`}></span>
+                      <span>{isScanning ? 'CORRIENDO' : 'LISTO'}</span>
+                    </span>
+                  </div>
+                  
+                  <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-borderDark font-mono text-sm">
+                    <div>
+                      <span class="text-textMuted block text-xs uppercase">Estado del Proceso</span>
+                      <span class="text-textPrimary font-semibold text-xs sm:text-sm block truncate mt-0.5">{scanProgress.status}</span>
+                    </div>
+                    <div>
+                      <span className="text-textMuted block text-xs uppercase">Empresas Analizadas</span>
+                      <div className="w-full bg-bgDark rounded-full h-3.5 mt-1 border border-borderDark overflow-hidden flex items-center relative">
+                        <div 
+                          className="bg-accentBlue h-full transition-all duration-300"
+                          style={{ width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%` }}
+                        ></div>
+                        <span className="absolute inset-0 text-[10px] font-bold flex items-center justify-center text-textPrimary">
+                          {scanProgress.current} / {scanProgress.total}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-textMuted block text-xs uppercase">Aprobados (Score ≥ 3)</span>
+                      <span className="text-accentGreen font-bold text-lg">{scanProgress.approved}</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-black/40 p-4 h-40 overflow-y-auto font-mono text-xs text-accentGreen flex flex-col space-y-1">
+                    {tickerLogs.length === 0 && (
+                      <span className="text-textMuted italic">Esperando inicialización de datos de ticker...</span>
+                    )}
+                    {tickerLogs.map((log, index) => (
+                      <div key={index} className={log.includes('[ERROR]') ? 'text-accentRed' : log.includes('APROBADO') ? 'text-accentGreen' : 'text-textMuted'}>
+                        &gt; {log}
+                      </div>
+                    ))}
+                    <div ref={logsEndRef}></div>
+                  </div>
+                </div>
+
+                {/* Main Results Grid */}
+                <div className="lg:col-span-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-textPrimary uppercase tracking-wider font-mono">
+                      Resultados del Filtro Cuantitativo
+                    </h2>
+                    <span className="text-xs text-textMuted font-mono">
+                      Mostrando únicamente activos con Fundamental Score &ge; 3
+                    </span>
+                  </div>
+
+                  {stocks.length === 0 && !isScanning && (
+                    <div className="p-8 border border-borderDark bg-panelDark rounded-lg text-center text-textMuted">
+                      Ninguna empresa del índice actual cumple los requisitos fundamentales (Score &ge; 3/5).
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {stocks.map((stock) => {
+                      const isExpanded = selectedStock === stock.ticker;
+                      const changeColor = stock.changePercent >= 0 ? "text-accentGreen" : "text-accentRed";
+                      const signal = stock.technicals.signal;
+                      const signalBg = signal === "COMPRA" ? "bg-accentGreen/15 text-accentGreen border border-accentGreen/30" : 
+                                       signal === "ESPERAR" ? "bg-accentRed/15 text-accentRed border border-accentRed/30" : 
+                                       "bg-textMuted/15 text-textMuted border border-textMuted/30";
+
+                      return (
+                        <div 
+                          key={stock.ticker} 
+                          className={`border rounded-lg bg-panelDark transition-all duration-300 flex flex-col justify-between shadow-md overflow-hidden ${
+                            isExpanded ? 'border-accentBlue ring-1 ring-accentBlue/30 md:col-span-2 xl:col-span-3' : 'border-borderDark hover:border-textMuted/40'
+                          }`}
+                        >
+                          <div className="p-5 flex flex-col space-y-4">
+                            {/* Card Header */}
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-mono font-bold text-lg text-textPrimary tracking-tight">{stock.ticker}</span>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${signalBg}`}>{signal}</span>
+                                </div>
+                                <h3 className="text-xs text-textMuted truncate max-w-[200px] mt-0.5">{stock.name}</h3>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-base font-bold text-textPrimary font-mono">
+                                  ${stock.price.toFixed(2)}
+                                </div>
+                                <div className={`text-xs font-mono font-semibold ${changeColor}`}>
+                                  {stock.changePercent >= 0 ? '+' : ''}{stock.changePercent.toFixed(2)}%
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Scoring badge & button */}
+                            <div className="flex items-center justify-between pt-2 border-t border-borderDark/60">
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-xs text-textMuted">Fundamental Score:</span>
+                                <span className={`px-1.5 py-0.5 rounded text-xs font-bold font-mono ${
+                                  stock.fundamentals.score >= 4 ? 'bg-accentGreen/20 text-accentGreen' : 'bg-accentYellow/20 text-accentYellow'
+                                }`}>
+                                  {stock.fundamentals.score}/5
+                                </span>
+                              </div>
+                              <button 
+                                onClick={() => setSelectedStock(isExpanded ? null : stock.ticker)}
+                                className="text-xs text-accentBlue hover:underline flex items-center space-x-1"
+                              >
+                                <span>{isExpanded ? 'Colapsar detalles' : 'Expandir gráficos y métricas'}</span>
+                                <svg className={`w-3.5 h-3.5 transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                            </div>
+
+                            {/* Checklist Breakdown */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-2 pt-2">
+                              <span className="text-xs text-textMuted font-mono block sm:col-span-2 md:col-span-1">Desglose de Reglas Fundamentales:</span>
+                              {stock.fundamentals.checks.map(c => (
+                                <div key={c.id} className="flex items-center justify-between text-xs py-1 border-b border-borderDark/30">
+                                  <span className="text-textMuted max-w-[240px] truncate">{c.name}</span>
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-mono text-textPrimary font-medium">{c.display}</span>
+                                    <span>
+                                      {c.pass ? (
+                                        <svg className="w-4 h-4 text-accentGreen" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      ) : (
+                                        <svg className="w-4 h-4 text-accentRed" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Expanded Data Panel (Technical & Risk & Chart) */}
+                          {isExpanded && (
+                            <div className="border-t border-borderDark bg-black/35 p-6 animate-fade-in">
+                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                
+                                {/* Technical indicators values */}
+                                <div className="space-y-4">
+                                  <h4 className="text-xs font-mono font-bold text-accentBlue uppercase tracking-wider">
+                                    Métricas Técnicas Calculadas (1D)
+                                  </h4>
+                                  <div className="grid grid-cols-3 gap-4">
+                                    <div className="bg-panelDark p-3 border border-borderDark rounded text-center">
+                                      <span className="text-[10px] text-textMuted block uppercase">RSI (14)</span>
+                                      <span className={`font-mono text-base font-bold ${
+                                        stock.technicals.rsi > 70 ? 'text-accentRed' : 
+                                        stock.technicals.rsi < 30 ? 'text-accentGreen' : 'text-textPrimary'
+                                      }`}>
+                                        {stock.technicals.rsi.toFixed(1)}
+                                      </span>
+                                    </div>
+                                    <div className="bg-panelDark p-3 border border-borderDark rounded text-center col-span-2">
+                                      <span className="text-[10px] text-textMuted block uppercase">Media Móvil (EMA 50)</span>
+                                      <span className="font-mono text-base font-bold text-textPrimary">
+                                        ${stock.technicals.ema.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="bg-panelDark p-3 border border-borderDark rounded text-center col-span-3">
+                                      <span className="text-[10px] text-textMuted block uppercase">ATR (14) - Volatilidad</span>
+                                      <span className="font-mono text-sm font-bold text-textPrimary">
+                                        ${stock.technicals.atr.toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Technical Analysis Checklist */}
+                                  <div className="space-y-2 pt-2">
+                                    <h4 className="text-xs font-mono font-bold text-accentBlue uppercase tracking-wider">
+                                      Checklist de Análisis Técnico
+                                    </h4>
+                                    <div className="space-y-1.5">
+                                      {stock.technicals.technicalChecks.map(c => (
+                                        <div key={c.id} className="flex items-start justify-between text-xs p-2 rounded bg-panelDark border border-borderDark/50">
+                                          <div className="flex flex-col space-y-0.5">
+                                            <span className="font-medium text-textPrimary">{c.name}</span>
+                                            <span className="font-mono text-[10px] text-textMuted">{c.desc}</span>
+                                          </div>
+                                          <span className="ml-2 mt-0.5 shrink-0">
+                                            {c.pass ? (
+                                              <svg className="w-4 h-4 text-accentGreen" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                                              </svg>
+                                            ) : (
+                                              <svg className="w-4 h-4 text-accentRed" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                              </svg>
+                                            )}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Risk Management Block */}
+                                  <div className="space-y-2 pt-2">
+                                    <h4 className="text-xs font-mono font-bold text-accentBlue uppercase tracking-wider">
+                                      Gestión de Riesgo & Niveles Operativos
+                                    </h4>
+                                    {signal === "COMPRA" ? (
+                                      <div className="space-y-2">
+                                        <div className="flex items-center justify-between p-2 rounded bg-accentBlue/10 border border-accentBlue/20">
+                                          <span className="text-xs text-textPrimary">ENTRADA (Actual)</span>
+                                          <span className="font-mono text-sm font-bold text-accentBlue">${stock.technicals.risk.entry.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between p-2 rounded bg-accentRed/10 border border-accentRed/20">
+                                          <span className="text-xs text-textPrimary">STOP LOSS (SL)</span>
+                                          <span className="font-mono text-sm font-bold text-accentRed">
+                                            ${stock.technicals.risk.sl.toFixed(2)} (-{stock.technicals.risk.slPercent.toFixed(2)}%)
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center justify-between p-2 rounded bg-accentGreen/10 border border-accentGreen/20">
+                                          <span className="text-xs text-textPrimary">TAKE PROFIT (TP - 1:2)</span>
+                                          <span className="font-mono text-sm font-bold text-accentGreen">
+                                            ${stock.technicals.risk.tp.toFixed(2)} (+{stock.technicals.risk.tpPercent.toFixed(2)}%)
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-textMuted bg-panelDark p-3 border border-borderDark rounded italic leading-relaxed">
+                                        Niveles de riesgo desactivados. Solo se calculan para activos con señal activa de COMPRA (Verde).
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Recharts Visual Price Chart */}
+                                <div className="lg:col-span-2 h-[260px] flex flex-col justify-between">
+                                  <h4 className="text-xs font-mono font-bold text-accentBlue uppercase tracking-wider mb-2">
+                                    Histórico Reciente (Últimos 30 días) y Niveles de Operación
+                                  </h4>
+                                  <div className="w-full h-full min-h-[220px]">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                      <LineChart data={stock.technicals.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#1d2331" />
+                                        <XAxis dataKey="date" stroke="#848e9c" tick={{ fontSize: 9, fontFamily: 'monospace' }} />
+                                        <YAxis domain={['auto', 'auto']} stroke="#848e9c" tick={{ fontSize: 9, fontFamily: 'monospace' }} />
+                                        <Tooltip 
+                                          contentStyle={{ backgroundColor: '#121620', borderColor: '#202835', color: '#eaecef', fontFamily: 'monospace', fontSize: '11px' }}
+                                        />
+                                        <Line type="monotone" dataKey="close" stroke="#2979ff" strokeWidth={2.5} dot={false} name="Precio" />
+                                        
+                                        {/* Operative Levels Rendered Automatically if Buy Signal */}
+                                        {signal === "COMPRA" && (
+                                          <ReferenceLine y={stock.technicals.risk.entry} stroke="#2979ff" strokeDasharray="4 4" label={{ value: 'Entry', fill: '#2979ff', fontSize: 10, position: 'top', fontFamily: 'monospace' }} />
+                                        )}
+                                        {signal === "COMPRA" && (
+                                          <ReferenceLine y={stock.technicals.risk.sl} stroke="#ff3d00" strokeDasharray="4 4" label={{ value: 'SL', fill: '#ff3d00', fontSize: 10, position: 'bottom', fontFamily: 'monospace' }} />
+                                        )}
+                                        {signal === "COMPRA" && (
+                                          <ReferenceLine y={stock.technicals.risk.tp} stroke="#00c853" strokeDasharray="4 4" label={{ value: 'TP', fill: '#00c853', fontSize: 10, position: 'top', fontFamily: 'monospace' }} />
+                                        )}
+                                      </LineChart>
+                                    </ResponsiveContainer>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </main>
+
+          {/* Sticky Audio News Footer */}
+          <footer className="fixed bottom-0 left-0 right-0 bg-panelDark border-t border-borderDark px-6 py-4 flex items-center justify-between shadow-2xl z-50">
+            <div className="flex items-center space-x-4">
+              <button 
+                onClick={handleNewsPlay}
+                className="w-10 h-10 rounded-full bg-accentBlue text-bgDark flex items-center justify-center hover:bg-accentBlue/80 transition-colors shadow-md focus:outline-none"
+                title={isNewsPlaying ? "Pausar noticias" : "Reproducir noticias"}
+              >
+                {isNewsPlaying ? (
+                  /* Pause Icon */
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                  </svg>
+                ) : (
+                  /* Play Icon */
+                  <svg className="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </button>
+
+              <button 
+                onClick={handleNewsNext}
+                className="w-8 h-8 rounded-full border border-borderDark text-textPrimary flex items-center justify-center hover:bg-borderDark/45 transition-colors focus:outline-none"
+                title="Siguiente noticia"
+              >
+                {/* Next Icon */}
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                </svg>
+              </button>
+              
+              <div className="flex items-center space-x-2">
+                <span className={`flex h-2 w-2 relative ${isNewsPlaying ? 'inline-flex' : 'hidden'}`}>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accentBlue opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-accentBlue"></span>
+                </span>
+                <span className="text-xs font-mono font-bold text-textMuted uppercase tracking-wider hidden sm:inline-block">
+                  {isNewsPlaying ? "Reproduciendo" : "Pausado"}
+                </span>
+              </div>
+            </div>
+
+            {/* Sliding Marquee Title */}
+            <div className="flex-grow mx-8 max-w-2xl bg-bgDark border border-borderDark rounded px-4 py-2 overflow-hidden shadow-inner hidden md:block">
+              <div className="marquee-container text-sm font-mono">
+                <span className="marquee-content text-accentBlue">
+                  {NEWS_LIST[newsIndex]}
+                </span>
+              </div>
+            </div>
+
+            <div className="text-right flex flex-col justify-center">
+              <span className="text-[10px] font-mono text-textMuted uppercase">Titular</span>
+              <span className="text-xs font-mono font-bold text-textPrimary">
+                {(newsIndex + 1).toString().padStart(2, '0')} / {NEWS_LIST.length.toString().padStart(2, '0')}
+              </span>
+            </div>
+          </footer>
+        </div>
+      );
+    }
+
+    // Render the App
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
